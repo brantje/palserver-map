@@ -26,6 +26,14 @@ const props = defineProps<{
   serverName?: string
 }>()
 
+const typeLabelMap = {
+  pal: 'Pal',
+  alpha_pal: 'Alpha Pal',
+  predator_pal: 'Predator Pal',
+  dungeon: 'Dungeon',
+  fast_travel: 'Fast Travel'
+}
+
 const viewer = shallowRef<any>(null)
 const osdLib = shallowRef<any>(null)
 const containerEl = ref<HTMLDivElement | null>(null)
@@ -342,7 +350,7 @@ onBeforeUnmount(() => {
             :checked="isTypeActive(type)"
             @change="handleTypeChange(type, $event)"
           >
-          <span>{{ type }}</span>
+          <span>{{ typeLabelMap[type as keyof typeof typeLabelMap] }}</span>
         </label>
       </div>
     </div>

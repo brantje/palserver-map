@@ -17,7 +17,8 @@ export default defineEventHandler(async () => {
 
     const raw = await fs.readFile(objectsPath, 'utf-8')
     const data = JSON.parse(raw)
-    const next = Array.isArray(data) ? data : []
+    const all = Array.isArray(data) ? data : []
+    const next = all.filter((item: any) => item.type !== 'pal')
     cachedObjects = next
     cachedMtimeMs = stat.mtimeMs
     return next
