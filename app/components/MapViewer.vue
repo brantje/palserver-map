@@ -76,8 +76,8 @@ function toViewportCoords(xLoc: number, yLoc: number, imageSize: any) {
 }
 
 function mapWorldToViewportCoords(worldX: number, worldY: number, imageSize: any) {
-  const xLoc = (worldY - 72430.0) / 459.0
-  const yLoc = (worldX + 293085.0) / 459.0
+  const xLoc = (worldY - 156844.55791065) / 462.962962963
+  const yLoc = (worldX + 121467.1611767) / 462.962962963
   return toViewportCoords(xLoc, yLoc, imageSize)
 }
 
@@ -256,7 +256,7 @@ onMounted(async () => {
     tileSources: [
       {
         type: 'image',
-        url: '/worldmap.webp'
+        url: '/map.jpg'
       }
     ],
     minZoomLevel: 1,
