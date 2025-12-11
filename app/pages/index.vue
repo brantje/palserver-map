@@ -70,7 +70,6 @@ onMounted(() => {
   intervalId = setInterval(() => {
     refreshPlayers()
     refreshInfo()
-    refreshMapObjects()
   }, pollMs)
 })
 
@@ -97,7 +96,7 @@ watch(errorMessage, (value) => {
 const handleConnected = () => {
   refreshPlayers()
   refreshInfo()
-  refreshMapObjects()
+  // refreshMapObjects()
 }
 </script>
 

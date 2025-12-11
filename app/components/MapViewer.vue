@@ -34,6 +34,9 @@ let mouseTracker: any
 const isReady = ref(false)
 const activeTypes = ref<Set<string>>(new Set())
 
+let playerOverlayEls: HTMLElement[] = []
+let objectOverlayByKey = new Map<string, HTMLElement>()
+
 const availableTypes = computed(() =>
   Array.from(new Set((props.mapObjects || []).map((item) => item.type))).sort()
 )
@@ -54,6 +57,10 @@ function getObjectIconSrc(mapObject: MapObject) {
   return null
 }
 
+function getMapObjectKey(mapObject: MapObject) {
+  return `${mapObject.type}:${mapObject.x}:${mapObject.y}:${mapObject.pal || ''}:${mapObject.localized_name || ''}`
+}
+
 function toViewportCoords(xLoc: number, yLoc: number, imageSize: any) {
   const viewportX = ((xLoc + 1000) / 2000) * imageSize.x
   const viewportY = ((1000 - yLoc) / 2000) * imageSize.y
@@ -64,6 +71,16 @@ function mapWorldToViewportCoords(worldX: number, worldY: number, imageSize: any
   const xLoc = (worldY - 156844.55791065) / 462.962962963
   const yLoc = (worldX + 121467.1611767) / 462.962962963
   return toViewportCoords(xLoc, yLoc, imageSize)
+}
+
+function getImageSize() {
+  return viewer.value?.source?.dimensions
+}
+
+function clearPlayerOverlays() {
+  if (!viewer.value || playerOverlayEls.length === 0) return
+  playerOverlayEls.forEach((el) => viewer.value.removeOverlay(el))
+  playerOverlayEls = []
 }
 
 function drawPlayers(imageSize: any) {
@@ -93,6 +110,8 @@ function drawPlayers(imageSize: any) {
       checkResize: false,
       placement: osdLib.value.Placement.CENTER
     })
+
+    playerOverlayEls.push(dot)
   })
 }
 
@@ -102,64 +121,96 @@ function getObjectLabel(mapObject: MapObject) {
   return mapObject.type
 }
 
-function drawMapObjects(imageSize: any) {
-  if (!viewer.value || !osdLib.value || !props.mapObjects?.length) return
+function createMapObjectOverlayElement(item: MapObject) {
+  const overlay = document.createElement('div')
+  overlay.className = 'map-object-overlay'
+  overlay.dataset.type = item.type
 
-  props.mapObjects
-    .filter((item) => activeTypes.value.has(item.type))
-    .forEach((item) => {
-      const { viewportX, viewportY } = mapWorldToViewportCoords(item.x, item.y, imageSize)
-      const location = viewer.value.viewport.imageToViewportCoordinates(viewportX, viewportY)
-      const overlay = document.createElement('div')
-      overlay.className = 'map-object-overlay'
-      overlay.dataset.type = item.type
+  const stack = document.createElement('div')
+  stack.className = 'map-object-stack'
 
-      const stack = document.createElement('div')
-      stack.className = 'map-object-stack'
+  const iconSrc = getObjectIconSrc(item)
+  if (iconSrc) {
+    const img = document.createElement('img')
+    img.className = 'map-object-image'
+    img.alt = item.type
+    img.src = iconSrc
+    img.loading = 'lazy'
+    // Fallback to a simple marker if the image is missing.
+    img.onerror = () => {
+      img.remove()
+      const marker = document.createElement('div')
+      marker.className = 'map-object-marker'
+      stack.prepend(marker)
+    }
+    stack.appendChild(img)
+  } else {
+    const marker = document.createElement('div')
+    marker.className = 'map-object-marker'
+    stack.appendChild(marker)
+  }
 
-      const iconSrc = getObjectIconSrc(item)
-      if (iconSrc) {
-        const img = document.createElement('img')
-        img.className = 'map-object-image'
-        img.alt = item.type
-        img.src = iconSrc
-        img.loading = 'lazy'
-        // Fallback to a simple marker if the image is missing.
-        img.onerror = () => {
-          img.remove()
-          const marker = document.createElement('div')
-          marker.className = 'map-object-marker'
-          stack.prepend(marker)
-        }
-        stack.appendChild(img)
-      } else {
-        const marker = document.createElement('div')
-        marker.className = 'map-object-marker'
-        stack.appendChild(marker)
-      }
+  const label = document.createElement('div')
+  label.className = 'map-object-label'
+  label.textContent = `${getObjectLabel(item)} (${item.type})`
+  stack.appendChild(label)
 
-      const label = document.createElement('div')
-      label.className = 'map-object-label'
-      label.textContent = `${getObjectLabel(item)} (${item.type})`
-      stack.appendChild(label)
-
-      overlay.appendChild(stack)
-
-      viewer.value.addOverlay({
-        element: overlay,
-        location,
-        checkResize: false,
-        placement: osdLib.value.Placement.CENTER
-      })
-    })
+  overlay.appendChild(stack)
+  return overlay
 }
 
-function drawAllOverlays() {
-  if (!viewer.value || !viewer.value.source || !osdLib.value || !isReady.value) return
-  const imageSize = viewer.value.source?.dimensions
+function updateObjectVisibility() {
+  if (!isReady.value) return
+  objectOverlayByKey.forEach((el) => {
+    const type = el.dataset.type
+    const shouldShow = !!type && activeTypes.value.has(type)
+    el.classList.toggle('map-object-hidden', !shouldShow)
+  })
+}
+
+function syncMapObjectOverlays() {
+  if (!viewer.value || !osdLib.value || !isReady.value) return
+  const imageSize = getImageSize()
   if (!imageSize) return
-  viewer.value.clearOverlays()
-  drawMapObjects(imageSize)
+
+  const objects = props.mapObjects || []
+  const nextKeys = new Set<string>()
+
+  for (const item of objects) {
+    const key = getMapObjectKey(item)
+    nextKeys.add(key)
+
+    if (objectOverlayByKey.has(key)) continue
+
+    const { viewportX, viewportY } = mapWorldToViewportCoords(item.x, item.y, imageSize)
+    const location = viewer.value.viewport.imageToViewportCoordinates(viewportX, viewportY)
+    const overlay = createMapObjectOverlayElement(item)
+
+    viewer.value.addOverlay({
+      element: overlay,
+      location,
+      checkResize: false,
+      placement: osdLib.value.Placement.CENTER
+    })
+
+    objectOverlayByKey.set(key, overlay)
+  }
+
+  // Remove stale overlays (objects removed from the dataset)
+  for (const [key, el] of objectOverlayByKey.entries()) {
+    if (nextKeys.has(key)) continue
+    viewer.value.removeOverlay(el)
+    objectOverlayByKey.delete(key)
+  }
+
+  updateObjectVisibility()
+}
+
+function redrawPlayers() {
+  if (!viewer.value || !osdLib.value || !isReady.value) return
+  const imageSize = getImageSize()
+  if (!imageSize) return
+  clearPlayerOverlays()
   drawPlayers(imageSize)
 }
 
@@ -215,7 +266,8 @@ onMounted(async () => {
 
   viewer.value.addOnceHandler('open', () => {
     isReady.value = true
-    drawAllOverlays()
+    syncMapObjectOverlays()
+    redrawPlayers()
   })
 
   mouseTracker = new OpenSeadragon.MouseTracker({
@@ -242,7 +294,7 @@ onMounted(async () => {
 watch(
   () => props.players,
   () => {
-    drawAllOverlays()
+    redrawPlayers()
   },
   { deep: true }
 )
@@ -257,7 +309,7 @@ watch(
       const next = new Set(Array.from(activeTypes.value).filter((type) => types.has(type)))
       activeTypes.value = next
     }
-    drawAllOverlays()
+    syncMapObjectOverlays()
   },
   { deep: true, immediate: true }
 )
@@ -265,7 +317,7 @@ watch(
 watch(
   () => activeTypes.value,
   () => {
-    drawAllOverlays()
+    updateObjectVisibility()
   },
   { deep: true }
 )

@@ -115,10 +115,14 @@ body {
   pointer-events: auto;
 }
 
+.map-object-hidden {
+  display: none !important;
+}
+
 .map-object-stack {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -135,8 +139,8 @@ body {
 
 .map-object-icon,
 .map-object-image {
-  width: 30px;
-  height: 30px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.75));
 }
