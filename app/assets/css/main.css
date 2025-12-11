@@ -147,7 +147,7 @@ body {
 
 .map-object-label {
   position: absolute;
-  bottom: 16px;
+  top: -20px;
   left: 50%;
   transform: translate(-50%, 0%);
   white-space: nowrap;
@@ -158,6 +158,15 @@ body {
   border: 1px solid black;
   font-size: 12px;
   display: none;
+}
+
+.map-object-label-pal {
+  bottom: 16px;
+}
+
+.map-object-label.map-object-label-alpha_pal, .map-object-label.map-object-label-predator_pal  {
+  top: -25px;
+  bottom: unset;
 }
 
 .map-object-stack:hover .map-object-label {

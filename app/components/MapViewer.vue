@@ -159,8 +159,8 @@ function createMapObjectOverlayElement(item: MapObject) {
   }
 
   const label = document.createElement('div')
-  label.className = 'map-object-label'
-  label.textContent = `${getObjectLabel(item)} (${item.type})`
+  label.className = `map-object-label map-object-label-${item.type}`
+  label.textContent = `${getObjectLabel(item)}`
   stack.appendChild(label)
 
   overlay.appendChild(stack)
