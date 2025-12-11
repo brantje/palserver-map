@@ -38,6 +38,22 @@ const availableTypes = computed(() =>
   Array.from(new Set((props.mapObjects || []).map((item) => item.type))).sort()
 )
 
+function normalizePalImageName(pal: string) {
+  return pal.trim().toLowerCase()
+}
+
+function getObjectIconSrc(mapObject: MapObject) {
+  if (mapObject.type === 'dungeon') return '/images/t_icon_compass_dungeon.webp'
+  if (mapObject.type === 'fast_travel') return '/images/t_icon_compass_fttower.webp'
+
+  // For pal-based objects, use the pal icon if we have one.
+  if ((mapObject.type === 'pal' || mapObject.type === 'alpha_pal' || mapObject.type === 'predator_pal') && mapObject.pal) {
+    return `/images/pals/${normalizePalImageName(mapObject.pal)}.webp`
+  }
+
+  return null
+}
+
 function toViewportCoords(xLoc: number, yLoc: number, imageSize: any) {
   const viewportX = ((xLoc + 1000) / 2000) * imageSize.x
   const viewportY = ((1000 - yLoc) / 2000) * imageSize.y
@@ -94,17 +110,43 @@ function drawMapObjects(imageSize: any) {
     .forEach((item) => {
       const { viewportX, viewportY } = mapWorldToViewportCoords(item.x, item.y, imageSize)
       const location = viewer.value.viewport.imageToViewportCoordinates(viewportX, viewportY)
-      const dot = document.createElement('div')
-      dot.className = 'map-object-overlay'
-      dot.dataset.type = item.type
+      const overlay = document.createElement('div')
+      overlay.className = 'map-object-overlay'
+      overlay.dataset.type = item.type
+
+      const stack = document.createElement('div')
+      stack.className = 'map-object-stack'
+
+      const iconSrc = getObjectIconSrc(item)
+      if (iconSrc) {
+        const img = document.createElement('img')
+        img.className = 'map-object-image'
+        img.alt = item.type
+        img.src = iconSrc
+        img.loading = 'lazy'
+        // Fallback to a simple marker if the image is missing.
+        img.onerror = () => {
+          img.remove()
+          const marker = document.createElement('div')
+          marker.className = 'map-object-marker'
+          stack.prepend(marker)
+        }
+        stack.appendChild(img)
+      } else {
+        const marker = document.createElement('div')
+        marker.className = 'map-object-marker'
+        stack.appendChild(marker)
+      }
 
       const label = document.createElement('div')
       label.className = 'map-object-label'
       label.textContent = `${getObjectLabel(item)} (${item.type})`
-      dot.appendChild(label)
+      stack.appendChild(label)
+
+      overlay.appendChild(stack)
 
       viewer.value.addOverlay({
-        element: dot,
+        element: overlay,
         location,
         checkResize: false,
         placement: osdLib.value.Placement.CENTER

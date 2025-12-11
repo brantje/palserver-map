@@ -10,6 +10,15 @@ type Player = {
   location_y: number
 }
 
+type MapObject = {
+  x: number
+  y: number
+  type: string
+  localized_name?: string
+  pal?: string
+  pal_type?: string
+}
+
 const pollMs = 3000
 const errorMessage = ref<string | null>(null)
 const toast = useToast()
@@ -42,11 +51,26 @@ const {
   }
 }, { server: false })
 
+const {
+  data: mapObjects,
+  refresh: refreshMapObjects
+} = useAsyncData<MapObject[]>('mapObjects', async () => {
+  try {
+    const response = await $fetch<MapObject[]>('/api/map/objects')
+    return response
+  } catch (err: any) {
+    // Non-fatal: players/map can still render without objects.
+    errorMessage.value = err?.data?.message || 'Unable to load map objects.'
+    return []
+  }
+}, { server: false })
+
 let intervalId: any
 onMounted(() => {
   intervalId = setInterval(() => {
     refreshPlayers()
     refreshInfo()
+    refreshMapObjects()
   }, pollMs)
 })
 
@@ -73,6 +97,7 @@ watch(errorMessage, (value) => {
 const handleConnected = () => {
   refreshPlayers()
   refreshInfo()
+  refreshMapObjects()
 }
 </script>
 
@@ -80,6 +105,7 @@ const handleConnected = () => {
   <section>
     <MapViewer
       :players="players || []"
+      :map-objects="mapObjects || []"
       :server-name="info?.servername"
       @connected="handleConnected"
     />
