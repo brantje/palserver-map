@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, watch, ref, computed, shallowRef } from 'vue'
-import type { LatLng, LatLngBoundsExpression, LayerGroup, LeafletMouseEvent, Map as LeafletMap, Marker } from 'leaflet'
+import type { Icon, LatLng, LatLngBoundsExpression, LeafletMouseEvent, Map as LeafletMap, Marker } from 'leaflet'
 
 type Player = {
   userId: string
@@ -40,9 +40,8 @@ const containerEl = ref<HTMLDivElement | null>(null)
 const coordsDisplay = ref('0,0')
 const activeTypes = ref<Set<string>>(new Set())
 
-let playersLayer: LayerGroup | null = null
-const objectLayersByType = new Map<string, LayerGroup>()
-const objectMarkerByKey = new Map<string, { marker: Marker; type: string }>()
+let playerMarkers: Marker[] = []
+let objectMarkers: Marker[] = []
 
 const availableTypes = computed(() =>
   Array.from(new Set((props.mapObjects || []).map((item) => item.type))).sort()
@@ -74,6 +73,8 @@ const WORLD_MIN_Y = -738920.0
 const WORLD_MAX_X = 447900.0
 const WORLD_MAX_Y = 708920.0
 
+// const TRANSLATION_X = 123930.0
+// const TRANSLATION_Y = 157935.0
 const TRANSLATION_X = 123930.0
 const TRANSLATION_Y = 157935.0
 
@@ -124,25 +125,20 @@ function leafletToWorld(latlng: LatLng): { worldX: number; worldY: number } {
   return { worldX: worldCoords.x, worldY: worldCoords.y }
 }
 
-function ensureObjectLayer(type: string): LayerGroup | null {
+function svgCircleIcon(color: string, sizePx: number, borderColor = '#ffffff', borderWidth = 2): Icon {
   const L = leaflet.value
-  const m = map.value
-  if (!L || !m) return null
-
-  let group = objectLayersByType.get(type)
-  if (!group) {
-    const created: LayerGroup = L.layerGroup()
-    objectLayersByType.set(type, created)
-    group = created
-  }
-
-  // Apply current visibility
-  const shouldShow = activeTypes.value.has(type)
-  const onMap = m.hasLayer(group)
-  if (shouldShow && !onMap) group.addTo(m)
-  if (!shouldShow && onMap) group.removeFrom(m)
-
-  return group
+  if (!L) throw new Error('Leaflet not initialized')
+  const r = Math.max(1, Math.floor(sizePx / 2) - borderWidth)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}" viewBox="0 0 ${sizePx} ${sizePx}">
+    <circle cx="${sizePx / 2}" cy="${sizePx / 2}" r="${r}" fill="${color}" stroke="${borderColor}" stroke-width="${borderWidth}" />
+  </svg>`
+  const iconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  return L.icon({
+    iconUrl,
+    iconSize: [sizePx, sizePx],
+    iconAnchor: [sizePx / 2, sizePx / 2],
+    popupAnchor: [0, -sizePx / 2]
+  })
 }
 
 function getObjectLabel(mapObject: MapObject) {
@@ -151,126 +147,98 @@ function getObjectLabel(mapObject: MapObject) {
   return mapObject.type
 }
 
-function createMapObjectOverlayElement(item: MapObject) {
-  const overlay = document.createElement('div')
-  overlay.className = 'map-object-overlay'
-  overlay.dataset.type = item.type
-
-  const stack = document.createElement('div')
-  stack.className = 'map-object-stack'
+function getObjectIcon(item: MapObject): Icon {
+  const L = leaflet.value
+  if (!L) throw new Error('Leaflet not initialized')
 
   const iconSrc = getObjectIconSrc(item)
-  if (iconSrc) {
-    const img = document.createElement('img')
-    img.className = 'map-object-image'
-    img.alt = item.type
-    img.src = iconSrc
-    img.loading = 'lazy'
-    // Fallback to a simple marker if the image is missing.
-    img.onerror = () => {
-      img.remove()
-      const marker = document.createElement('div')
-      marker.className = 'map-object-marker'
-      stack.prepend(marker)
-    }
-    stack.appendChild(img)
-  } else {
-    const marker = document.createElement('div')
-    marker.className = 'map-object-marker'
-    stack.appendChild(marker)
-  }
+  if (!iconSrc) return svgCircleIcon('#4ade80', 14)
 
-  const label = document.createElement('div')
-  label.className = `map-object-label map-object-label-${item.type}`
-  label.textContent = `${getObjectLabel(item)}`
-  stack.appendChild(label)
-
-  overlay.appendChild(stack)
-  return overlay
+  const size = (item.type === 'dungeon' || item.type === 'fast_travel') ? 32 : 40
+  return L.icon({
+    iconUrl: iconSrc,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
+  })
 }
 
 function updateObjectVisibility() {
   const m = map.value
   if (!m) return
 
-  for (const [type, group] of objectLayersByType.entries()) {
-    const shouldShow = activeTypes.value.has(type)
-    const onMap = m.hasLayer(group)
-    if (shouldShow && !onMap) group.addTo(m)
-    if (!shouldShow && onMap) group.removeFrom(m)
+  // Show/hide markers based on activeTypes (add/remove from map)
+  for (const marker of objectMarkers) {
+    const type = (marker as any)?.options?.title as string | undefined
+    const shouldShow = !!type && activeTypes.value.has(type)
+    const onMap = m.hasLayer(marker)
+    if (shouldShow && !onMap) marker.addTo(m)
+    if (!shouldShow && onMap) m.removeLayer(marker)
   }
 }
 
-function syncMapObjectMarkers() {
+function redrawMapObjects() {
   const L = leaflet.value
   const m = map.value
   if (!L || !m) return
+
+  // Clear existing object markers
+  objectMarkers.forEach((marker) => m.removeLayer(marker))
+  objectMarkers = []
+
   const objects = props.mapObjects || []
-  const nextKeys = new Set<string>()
-
   for (const item of objects) {
-    const key = getMapObjectKey(item)
-    nextKeys.add(key)
-
-    if (objectMarkerByKey.has(key)) continue
-
-    const overlay = createMapObjectOverlayElement(item)
-    const icon = L.divIcon({
-      className: 'map-object-leaflet-icon',
-      html: overlay.outerHTML,
-      iconSize: [48, 48],
-      iconAnchor: [24, 24]
-    })
-
+    const icon = getObjectIcon(item)
     const latlng = worldToLeaflet(item.x, item.y)
-    const marker = L.marker(latlng, { icon })
 
-    const group = ensureObjectLayer(item.type)
-    if (group) marker.addTo(group)
+    // We store type in marker.options.title so updateObjectVisibility can toggle quickly.
+    const marker = L.marker(latlng, { icon, title: item.type, className: 'textHelper' })
 
-    objectMarkerByKey.set(key, { marker, type: item.type })
+    const label = getObjectLabel(item)
+    const mapCoords = worldToMap(item.x, item.y)
+    marker.bindPopup(`
+      <div>
+        <h3 class="text-lg font-bold">${label}</h3>
+        <p class="text-xs">${typeLabelMap[item.type as keyof typeof typeLabelMap] ?? item.type}</p>
+        <p class="text-xs mt-2">World Coords: ${item.x.toFixed(2)}, ${item.y.toFixed(2)}</p>
+        <p class="text-xs">Map Coords: ${mapCoords.x}, ${mapCoords.y * -1}</p>
+      </div>
+    `)
+
+    if (activeTypes.value.has(item.type)) marker.addTo(m)
+    objectMarkers.push(marker)
   }
-
-  // Remove stale markers (objects removed from the dataset)
-  for (const [key, entry] of objectMarkerByKey.entries()) {
-    if (nextKeys.has(key)) continue
-    const group = objectLayersByType.get(entry.type)
-    if (group) group.removeLayer(entry.marker)
-    entry.marker.remove()
-    objectMarkerByKey.delete(key)
-  }
-
-  updateObjectVisibility()
 }
 
 function redrawPlayers() {
   const L = leaflet.value
   const m = map.value
-  if (!L || !m || !playersLayer) return
+  if (!L || !m) return
 
-  playersLayer.clearLayers()
+  // Clear existing player markers
+  playerMarkers.forEach((marker) => m.removeLayer(marker))
+  playerMarkers = []
 
   for (const player of props.players || []) {
     const ping = player.ping?.toFixed(2)
-    const html = `
-      <div class="test-overlay">
-        <div class="player-label">
-          <span>Lv.${player.level ?? '?'}</span>
-          <span>${player.name}</span>
-          ${ping ? `<span class="ping-label">Ping: ${ping}ms</span>` : ''}
-        </div>
-      </div>
-    `
-
-    const icon = L.divIcon({
-      className: 'player-leaflet-icon',
-      html,
-      iconSize: [10, 10],
-      iconAnchor: [5, 5]
-    })
+    const icon = svgCircleIcon('#ce7fe0', 14)
 
     const latlng = worldToLeaflet(player.location_x, player.location_y)
-    L.marker(latlng, { icon }).addTo(playersLayer)
+    const marker = L.marker(latlng, { icon }).addTo(m)
+
+    const mapCoords = worldToMap(player.location_x, player.location_y)
+    marker.bindPopup(`
+      <div>
+        <h3 class="text-lg font-bold">${player.name}</h3>
+        <p class="text-xs">User ID: ${player.userId}</p>
+        <p class="text-xs">Level: ${player.level ?? '?'}</p>
+        ${ping ? `<p class="text-xs">Ping: ${ping}ms</p>` : ''}
+        <p class="text-xs mt-2">World Coords: ${player.location_x.toFixed(2)}, ${player.location_y.toFixed(2)}</p>
+        <p class="text-xs">Map Coords: ${mapCoords.x}, ${mapCoords.y * -1}</p>
+      </div>
+    `)
+
+    playerMarkers.push(marker)
   }
 }
 
@@ -322,6 +290,11 @@ onMounted(async () => {
     maxBounds: bounds,
     maxBoundsViscosity: 1
   })
+  
+  
+  L.control.zoom({
+      position: 'topright'
+  }).addTo(map.value);
 
   const m = map.value
   if (!m) return
@@ -330,7 +303,7 @@ onMounted(async () => {
   m.fitBounds(bounds)
   m.setView([origin.lat, origin.lng], -3)
 
-  playersLayer = L.layerGroup().addTo(m)
+  let playersLayer = L.layerGroup().addTo(m)
 
   m.on('mousemove', (e: LeafletMouseEvent) => {
     const world = leafletToWorld(e.latlng)
@@ -338,7 +311,7 @@ onMounted(async () => {
     coordsDisplay.value = `${Math.round(game.x)},${Math.round(game.y * -1)}`
   })
 
-  syncMapObjectMarkers()
+  redrawMapObjects()
   redrawPlayers()
 })
 
@@ -360,7 +333,7 @@ watch(
       const next = new Set(Array.from(activeTypes.value).filter((type) => types.has(type)))
       activeTypes.value = next
     }
-    syncMapObjectMarkers()
+    redrawMapObjects()
   },
   { deep: true, immediate: true }
 )
@@ -378,9 +351,8 @@ onBeforeUnmount(() => {
     map.value.remove()
     map.value = null
   }
-  playersLayer = null
-  objectLayersByType.clear()
-  objectMarkerByKey.clear()
+  playerMarkers = []
+  objectMarkers = []
 })
 </script>
 

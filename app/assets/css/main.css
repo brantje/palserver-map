@@ -32,7 +32,7 @@ body {
   bottom: 1vh;
 }
 
-.textHelper {
+.textHelper, .leaflet-popup-content-wrapper {
   background-color: rgba(0, 0, 0, 0.5);
   border: 2px solid black;
   box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
@@ -40,7 +40,12 @@ body {
   top: 1vh;
   left: 1vw;
 }
-
+.leaflet-popup-content {
+  color: white;
+}
+.leaflet-popup-content p {
+  margin: 0;
+}
 .info {
   background-color: rgba(0, 0, 0, 0.5);
   border: 2px solid black;
