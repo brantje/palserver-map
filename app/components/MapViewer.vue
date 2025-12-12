@@ -49,6 +49,14 @@ const availableTypes = computed(() =>
   Array.from(new Set((props.mapObjects || []).map((item) => item.type))).sort()
 )
 
+const typeCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const item of props.mapObjects || []) {
+    counts[item.type] = (counts[item.type] ?? 0) + 1
+  }
+  return counts
+})
+
 const sortedPlayers = computed(() => {
   return [...(props.players || [])].sort((a, b) => a.name.localeCompare(b.name))
 })
@@ -450,7 +458,10 @@ onBeforeUnmount(() => {
             :checked="isTypeActive(type)"
             @change="handleTypeChange(type, $event)"
           >
-          <span>{{ typeLabelMap[type as keyof typeof typeLabelMap] ?? type }}</span>
+          <span>
+            {{ typeLabelMap[type as keyof typeof typeLabelMap] ?? type }}
+            ({{ typeCounts[type] ?? 0 }})
+          </span>
         </label>
       </div>
       <div v-if="sortedPlayers.length" class="player-list">
