@@ -82,29 +82,6 @@ body {
   box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
 }
 
-.test-overlay {
-  z-index: 100;
-  background: rgb(206, 127, 224);
-  width: 10px;
-  height: 10px;
-  border-radius: 100px;
-  position: relative;
-}
-
-.player-label {
-  position: absolute;
-  bottom: 16px;
-  right: 50%;
-  transform: translate(50%, 0%);
-  width: fit-content;
-  color: white;
-  font-weight: bold;
-  background-color: rgba(0, 0, 0, 0.5);
-  padding: 8px 16px;
-  display: flex;
-  gap: 8px;
-}
-
 .ping-label {
   position: absolute;
   bottom: 0;
@@ -127,6 +104,60 @@ body {
 .leaflet-div-icon.player-leaflet-icon {
   background: transparent;
   border: none;
+}
+
+.player-marker-stack {
+  position: relative;
+  width: 160px;
+  height: 54px;
+  pointer-events: auto;
+}
+
+.player-marker-dot {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ce7fe0;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
+}
+
+.player-marker-label {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  text-align: center;
+  color: #fff;
+  font-weight: 700;
+  background-color: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(0, 0, 0, 0.9);
+  padding: 3px 6px;
+  border-radius: 6px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+  /* Important: don't block marker clicks; clicking still opens the popup */
+  pointer-events: none;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-marker-name {
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.player-marker-level {
+  margin-top: 1px;
+  font-size: 11px;
+  line-height: 1.1;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
 }
 
 .map-object-hidden {
@@ -203,6 +234,75 @@ body {
 
 .filter-option input {
   accent-color: #ce7fe0;
+}
+
+.player-list {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.player-list-title {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 6px;
+}
+
+.player-list-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.player-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.player-focus-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+
+.player-focus-btn:hover {
+  border-color: rgba(206, 127, 224, 0.85);
+  background: rgba(206, 127, 224, 0.15);
+}
+
+.player-focus-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.player-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-level {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .app-shell {

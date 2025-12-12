@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, watch, ref, computed, shallowRef } from 'vue'
-import type { Icon, LatLng, LatLngBoundsExpression, LeafletMouseEvent, Map as LeafletMap, Marker } from 'leaflet'
+import type { DivIcon, Icon, LatLng, LatLngBoundsExpression, LeafletMouseEvent, Map as LeafletMap, Marker } from 'leaflet'
 
 type Player = {
   userId: string
@@ -36,19 +36,34 @@ const typeLabelMap = {
 
 const leaflet = shallowRef<any>(null)
 const map = shallowRef<LeafletMap | null>(null)
+const playersLayer = shallowRef<any>(null)
 const containerEl = ref<HTMLDivElement | null>(null)
 const coordsDisplay = ref('0,0')
 const activeTypes = ref<Set<string>>(new Set())
 
 let playerMarkers: Marker[] = []
 let objectMarkers: Marker[] = []
+const playerMarkerByUserId = new Map<string, Marker>()
 
 const availableTypes = computed(() =>
   Array.from(new Set((props.mapObjects || []).map((item) => item.type))).sort()
 )
 
+const sortedPlayers = computed(() => {
+  return [...(props.players || [])].sort((a, b) => a.name.localeCompare(b.name))
+})
+
 function normalizePalImageName(pal: string) {
   return pal.trim().toLowerCase()
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 function getObjectIconSrc(mapObject: MapObject) {
@@ -141,6 +156,38 @@ function svgCircleIcon(color: string, sizePx: number, borderColor = '#ffffff', b
   })
 }
 
+function getPlayerIcon(player: Player): DivIcon {
+  const L = leaflet.value
+  if (!L) throw new Error('Leaflet not initialized')
+
+  const safeName = escapeHtml(player.name)
+  const safeLevel = escapeHtml(`Lv ${player.level ?? '?'}`)
+
+  // Uses existing CSS hooks in `app/assets/css/main.css`:
+  // - `.leaflet-div-icon.player-leaflet-icon`
+  // - `.player-marker-stack` (layout box)
+  // - `.player-marker-dot` (the dot)
+  // - `.player-marker-label` (label above the dot)
+  const html = `
+    <div class="player-marker-stack">
+      <div class="player-marker-label">
+        <div class="player-marker-name">${safeName}</div>
+        <div class="player-marker-level">${safeLevel}</div>
+      </div>
+      <div class="player-marker-dot"></div>
+    </div>
+  `
+
+  return L.divIcon({
+    className: 'player-leaflet-icon',
+    html,
+    // Give the icon a real box so the label area is still clickable (opens popup).
+    iconSize: [160, 54],
+    iconAnchor: [80, 48],
+    popupAnchor: [0, -48]
+  })
+}
+
 function getObjectLabel(mapObject: MapObject) {
   if (mapObject.localized_name) return mapObject.localized_name
   if (mapObject.pal) return mapObject.pal
@@ -215,31 +262,67 @@ function redrawPlayers() {
   const m = map.value
   if (!L || !m) return
 
-  // Clear existing player markers
-  playerMarkers.forEach((marker) => m.removeLayer(marker))
-  playerMarkers = []
+  // Do NOT clear the existing player layer; update markers in-place so focusing doesn't reset them.
+  const layer = playersLayer.value ?? m
 
+  const nextUserIds = new Set<string>()
   for (const player of props.players || []) {
+    nextUserIds.add(player.userId)
+
     const ping = player.ping?.toFixed(2)
-    const icon = svgCircleIcon('#ce7fe0', 14)
-
+    const icon = getPlayerIcon(player)
     const latlng = worldToLeaflet(player.location_x, player.location_y)
-    const marker = L.marker(latlng, { icon }).addTo(m)
-
     const mapCoords = worldToMap(player.location_x, player.location_y)
-    marker.bindPopup(`
+    const popupHtml = `
       <div>
         <h3 class="text-lg font-bold">${player.name}</h3>
-        <p class="text-xs">User ID: ${player.userId}</p>
         <p class="text-xs">Level: ${player.level ?? '?'}</p>
         ${ping ? `<p class="text-xs">Ping: ${ping}ms</p>` : ''}
         <p class="text-xs mt-2">World Coords: ${player.location_x.toFixed(2)}, ${player.location_y.toFixed(2)}</p>
         <p class="text-xs">Map Coords: ${mapCoords.x}, ${mapCoords.y * -1}</p>
       </div>
-    `)
+    `
 
-    playerMarkers.push(marker)
+    const existing = playerMarkerByUserId.get(player.userId)
+    if (existing) {
+      existing.setLatLng(latlng)
+      ;(existing as any).setIcon?.(icon)
+      existing.bindPopup(popupHtml)
+      if (!m.hasLayer(existing)) existing.addTo(layer)
+      continue
+    }
+
+    const marker = L.marker(latlng, { icon }).addTo(layer)
+    marker.bindPopup(popupHtml)
+    playerMarkerByUserId.set(player.userId, marker)
   }
+
+  // Remove markers for players that no longer exist
+  for (const [userId, marker] of playerMarkerByUserId.entries()) {
+    if (nextUserIds.has(userId)) continue
+    if (m.hasLayer(marker)) m.removeLayer(marker)
+    playerMarkerByUserId.delete(userId)
+  }
+
+  // Keep this array in sync for any other codepaths that rely on it.
+  playerMarkers = Array.from(playerMarkerByUserId.values())
+}
+
+function focusPlayer(player: Player) {
+  const m = map.value
+  if (!m) return
+
+  const marker = playerMarkerByUserId.get(player.userId)
+  const latlng = marker ? marker.getLatLng() : worldToLeaflet(player.location_x, player.location_y)
+  const nextZoom = Math.max(m.getZoom(), -1)
+
+  if (typeof (m as any).flyTo === 'function') {
+    ;(m as any).flyTo(latlng, nextZoom, { animate: true, duration: 0.6 })
+  } else {
+    m.setView(latlng, nextZoom, { animate: true })
+  }
+
+  marker?.openPopup()
 }
 
 function toggleType(type: string, checked: boolean) {
@@ -303,7 +386,7 @@ onMounted(async () => {
   m.fitBounds(bounds)
   m.setView([origin.lat, origin.lng], -3)
 
-  let playersLayer = L.layerGroup().addTo(m)
+  playersLayer.value = L.layerGroup().addTo(m)
 
   m.on('mousemove', (e: LeafletMouseEvent) => {
     const world = leafletToWorld(e.latlng)
@@ -351,8 +434,10 @@ onBeforeUnmount(() => {
     map.value.remove()
     map.value = null
   }
+  playersLayer.value = null
   playerMarkers = []
   objectMarkers = []
+  playerMarkerByUserId.clear()
 })
 </script>
 
@@ -367,8 +452,30 @@ onBeforeUnmount(() => {
             :checked="isTypeActive(type)"
             @change="handleTypeChange(type, $event)"
           >
-          <span>{{ typeLabelMap[type as keyof typeof typeLabelMap] }}</span>
+          <span>{{ typeLabelMap[type as keyof typeof typeLabelMap] ?? type }}</span>
         </label>
+      </div>
+      <div v-if="sortedPlayers.length" class="player-list">
+        <div class="player-list-title">Players</div>
+        <ul class="player-list-items">
+          <li v-for="player in sortedPlayers" :key="player.userId" class="player-list-item">
+            <button
+              type="button"
+              class="player-focus-btn"
+              title="Focus on player"
+              @click="focusPlayer(player)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M11 3a1 1 0 0 1 2 0v2.06A7.002 7.002 0 0 1 18.94 11H21a1 1 0 1 1 0 2h-2.06A7.002 7.002 0 0 1 13 18.94V21a1 1 0 1 1-2 0v-2.06A7.002 7.002 0 0 1 5.06 13H3a1 1 0 1 1 0-2h2.06A7.002 7.002 0 0 1 11 5.06V3zm1 4a5 5 0 1 0 0 10a5 5 0 0 0 0-10zm0 3a2 2 0 1 1 0 4a2 2 0 0 1 0-4z"
+                />
+              </svg>
+            </button>
+            <span class="player-name" :title="player.userId">{{ player.name }}</span>
+            <span v-if="player.level != null" class="player-level">Lv {{ player.level }}</span>
+          </li>
+        </ul>
       </div>
     </div>
     <div class="info">

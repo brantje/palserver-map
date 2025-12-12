@@ -15,6 +15,11 @@ export default defineEventHandler(async () => {
         password: palworld.password
       }
     })
+    // Remove user id from the response
+    result.data.players = result.data.players.map((player: any) => {
+      delete player.userId
+      return player
+    })
     return result.data?.players || []
   } catch (error: any) {
     throw createError({
