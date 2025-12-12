@@ -1,12 +1,10 @@
 services:
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: palserver-map:local
+  palserver-map:
+    image: ghcr.io/brantje/palserver-map:main
+    restart: unless-stopped
+    container_name: palserver-map
     ports:
       - "3000:3000"
-    restart: unless-stopped
 
     # If your Palworld REST API is running on the Docker host, keep this and set
     # NUXT_PALWORLD_HOST=host.docker.internal (works with Docker Engine host-gateway).
