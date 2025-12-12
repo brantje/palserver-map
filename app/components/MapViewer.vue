@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, shallowRef, watch, ref, computed } from 'vue'
-
+import { onBeforeUnmount, onMounted, watch, ref, computed, shallowRef } from 'vue'
+import type { Icon, LatLng, LatLngBoundsExpression, LeafletMouseEvent, Map as LeafletMap, Marker } from 'leaflet'
 
 type Player = {
   userId: string
@@ -34,16 +34,14 @@ const typeLabelMap = {
   fast_travel: 'Fast Travel'
 }
 
-const viewer = shallowRef<any>(null)
-const osdLib = shallowRef<any>(null)
+const leaflet = shallowRef<any>(null)
+const map = shallowRef<LeafletMap | null>(null)
 const containerEl = ref<HTMLDivElement | null>(null)
 const coordsDisplay = ref('0,0')
-let mouseTracker: any
-const isReady = ref(false)
 const activeTypes = ref<Set<string>>(new Set())
 
-let playerOverlayEls: HTMLElement[] = []
-let objectOverlayByKey = new Map<string, HTMLElement>()
+let playerMarkers: Marker[] = []
+let objectMarkers: Marker[] = []
 
 const availableTypes = computed(() =>
   Array.from(new Set((props.mapObjects || []).map((item) => item.type))).sort()
@@ -69,57 +67,77 @@ function getMapObjectKey(mapObject: MapObject) {
   return `${mapObject.type}:${mapObject.x}:${mapObject.y}:${mapObject.pal || ''}:${mapObject.localized_name || ''}`
 }
 
-function toViewportCoords(xLoc: number, yLoc: number, imageSize: any) {
-  const viewportX = ((xLoc + 1000) / 2000) * imageSize.x
-  const viewportY = ((1000 - yLoc) / 2000) * imageSize.y
-  return { viewportX, viewportY }
+// --- Leaflet coordinate conversion (provided) ---
+const WORLD_MIN_X = -999940.0
+const WORLD_MIN_Y = -738920.0
+const WORLD_MAX_X = 447900.0
+const WORLD_MAX_Y = 708920.0
+
+// const TRANSLATION_X = 123930.0
+// const TRANSLATION_Y = 157935.0
+const TRANSLATION_X = 123930.0
+const TRANSLATION_Y = 157935.0
+
+const SCALE = 459.0
+const MAP_SIZE = 8192
+
+const GAME_MIN_X = -1951
+const GAME_MIN_Y = -1893
+const GAME_MAX_X = 1198
+const GAME_MAX_Y = 1243
+
+const ORIGIN_GAME_X = 0
+const ORIGIN_GAME_Y = 0
+
+const MAP_WIDTH = GAME_MAX_X - GAME_MIN_X
+const MAP_HEIGHT = GAME_MAX_Y - GAME_MIN_Y
+
+const TRANSFORM_A = MAP_SIZE / MAP_WIDTH
+const TRANSFORM_B = 5075.45
+const TRANSFORM_C = -MAP_SIZE / MAP_HEIGHT
+const TRANSFORM_D = 4960.62
+
+function worldToMap(worldX: number, worldY: number): { x: number; y: number } {
+  const mapX = Math.round((worldY - TRANSLATION_Y) / SCALE)
+  const mapY = Math.round((worldX + TRANSLATION_X) / SCALE) * -1
+  return { x: mapX, y: mapY }
 }
 
-function mapWorldToViewportCoords(worldX: number, worldY: number, imageSize: any) {
-  const xLoc = (worldY - 156844.55791065) / 462.962962963
-  const yLoc = (worldX + 121467.1611767) / 462.962962963
-  return toViewportCoords(xLoc, yLoc, imageSize)
+function mapToWorld(mapX: number, mapY: number): { x: number; y: number } {
+  const worldX = mapY * -1 * SCALE - TRANSLATION_X
+  const worldY = mapX * SCALE + TRANSLATION_Y
+  return { x: worldX, y: worldY }
 }
 
-function getImageSize() {
-  return viewer.value?.source?.dimensions
+function worldToLeaflet(worldX: number, worldY: number): LatLng {
+  const L = leaflet.value
+  if (!L) throw new Error('Leaflet not initialized')
+  const mapCoords = worldToMap(worldX, worldY)
+  const leafletX = TRANSFORM_A * mapCoords.x + TRANSFORM_B
+  const leafletY = TRANSFORM_C * mapCoords.y + TRANSFORM_D
+  return L.latLng(leafletY, leafletX)
 }
 
-function clearPlayerOverlays() {
-  if (!viewer.value || playerOverlayEls.length === 0) return
-  playerOverlayEls.forEach((el) => viewer.value.removeOverlay(el))
-  playerOverlayEls = []
+function leafletToWorld(latlng: LatLng): { worldX: number; worldY: number } {
+  const gameX = (latlng.lng - TRANSFORM_B) / TRANSFORM_A
+  const gameY = (latlng.lat - TRANSFORM_D) / TRANSFORM_C
+  const worldCoords = mapToWorld(gameX, gameY)
+  return { worldX: worldCoords.x, worldY: worldCoords.y }
 }
 
-function drawPlayers(imageSize: any) {
-  if (!viewer.value || !viewer.value.source || !props.players || !osdLib.value) return
-
-  props.players.forEach((player) => {
-    const { viewportX, viewportY } = mapWorldToViewportCoords(
-      player.location_x,
-      player.location_y,
-      imageSize
-    )
-    const location = viewer.value.viewport.imageToViewportCoordinates(viewportX, viewportY)
-    const dot = document.createElement('div')
-    dot.className = 'test-overlay'
-
-    const ping = player.ping?.toFixed(2)
-    const label = document.createElement('div')
-    label.className = 'player-label'
-    label.innerHTML = `<span>Lv.${player.level ?? '?'}</span> <span>${player.name}</span>${
-      ping ? `<span class="ping-label">Ping: ${ping}ms</span>` : ''
-    }`
-    dot.appendChild(label)
-
-    viewer.value.addOverlay({
-      element: dot,
-      location,
-      checkResize: false,
-      placement: osdLib.value.Placement.CENTER
-    })
-
-    playerOverlayEls.push(dot)
+function svgCircleIcon(color: string, sizePx: number, borderColor = '#ffffff', borderWidth = 2): Icon {
+  const L = leaflet.value
+  if (!L) throw new Error('Leaflet not initialized')
+  const r = Math.max(1, Math.floor(sizePx / 2) - borderWidth)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}" viewBox="0 0 ${sizePx} ${sizePx}">
+    <circle cx="${sizePx / 2}" cy="${sizePx / 2}" r="${r}" fill="${color}" stroke="${borderColor}" stroke-width="${borderWidth}" />
+  </svg>`
+  const iconUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  return L.icon({
+    iconUrl,
+    iconSize: [sizePx, sizePx],
+    iconAnchor: [sizePx / 2, sizePx / 2],
+    popupAnchor: [0, -sizePx / 2]
   })
 }
 
@@ -129,97 +147,99 @@ function getObjectLabel(mapObject: MapObject) {
   return mapObject.type
 }
 
-function createMapObjectOverlayElement(item: MapObject) {
-  const overlay = document.createElement('div')
-  overlay.className = 'map-object-overlay'
-  overlay.dataset.type = item.type
-
-  const stack = document.createElement('div')
-  stack.className = 'map-object-stack'
+function getObjectIcon(item: MapObject): Icon {
+  const L = leaflet.value
+  if (!L) throw new Error('Leaflet not initialized')
 
   const iconSrc = getObjectIconSrc(item)
-  if (iconSrc) {
-    const img = document.createElement('img')
-    img.className = 'map-object-image'
-    img.alt = item.type
-    img.src = iconSrc
-    img.loading = 'lazy'
-    // Fallback to a simple marker if the image is missing.
-    img.onerror = () => {
-      img.remove()
-      const marker = document.createElement('div')
-      marker.className = 'map-object-marker'
-      stack.prepend(marker)
-    }
-    stack.appendChild(img)
-  } else {
-    const marker = document.createElement('div')
-    marker.className = 'map-object-marker'
-    stack.appendChild(marker)
-  }
+  if (!iconSrc) return svgCircleIcon('#4ade80', 14)
 
-  const label = document.createElement('div')
-  label.className = `map-object-label map-object-label-${item.type}`
-  label.textContent = `${getObjectLabel(item)}`
-  stack.appendChild(label)
-
-  overlay.appendChild(stack)
-  return overlay
-}
-
-function updateObjectVisibility() {
-  if (!isReady.value) return
-  objectOverlayByKey.forEach((el) => {
-    const type = el.dataset.type
-    const shouldShow = !!type && activeTypes.value.has(type)
-    el.classList.toggle('map-object-hidden', !shouldShow)
+  const size = (item.type === 'dungeon' || item.type === 'fast_travel') ? 32 : 40
+  return L.icon({
+    iconUrl: iconSrc,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
   })
 }
 
-function syncMapObjectOverlays() {
-  if (!viewer.value || !osdLib.value || !isReady.value) return
-  const imageSize = getImageSize()
-  if (!imageSize) return
+function updateObjectVisibility() {
+  const m = map.value
+  if (!m) return
+
+  // Show/hide markers based on activeTypes (add/remove from map)
+  for (const marker of objectMarkers) {
+    const type = (marker as any)?.options?.title as string | undefined
+    const shouldShow = !!type && activeTypes.value.has(type)
+    const onMap = m.hasLayer(marker)
+    if (shouldShow && !onMap) marker.addTo(m)
+    if (!shouldShow && onMap) m.removeLayer(marker)
+  }
+}
+
+function redrawMapObjects() {
+  const L = leaflet.value
+  const m = map.value
+  if (!L || !m) return
+
+  // Clear existing object markers
+  objectMarkers.forEach((marker) => m.removeLayer(marker))
+  objectMarkers = []
 
   const objects = props.mapObjects || []
-  const nextKeys = new Set<string>()
-
   for (const item of objects) {
-    const key = getMapObjectKey(item)
-    nextKeys.add(key)
+    const icon = getObjectIcon(item)
+    const latlng = worldToLeaflet(item.x, item.y)
 
-    if (objectOverlayByKey.has(key)) continue
+    // We store type in marker.options.title so updateObjectVisibility can toggle quickly.
+    const marker = L.marker(latlng, { icon, title: item.type, className: 'textHelper' })
 
-    const { viewportX, viewportY } = mapWorldToViewportCoords(item.x, item.y, imageSize)
-    const location = viewer.value.viewport.imageToViewportCoordinates(viewportX, viewportY)
-    const overlay = createMapObjectOverlayElement(item)
+    const label = getObjectLabel(item)
+    const mapCoords = worldToMap(item.x, item.y)
+    marker.bindPopup(`
+      <div>
+        <h3 class="text-lg font-bold">${label}</h3>
+        <p class="text-xs">${typeLabelMap[item.type as keyof typeof typeLabelMap] ?? item.type}</p>
+        <p class="text-xs mt-2">World Coords: ${item.x.toFixed(2)}, ${item.y.toFixed(2)}</p>
+        <p class="text-xs">Map Coords: ${mapCoords.x}, ${mapCoords.y * -1}</p>
+      </div>
+    `)
 
-    viewer.value.addOverlay({
-      element: overlay,
-      location,
-      checkResize: false,
-      placement: osdLib.value.Placement.CENTER
-    })
-
-    objectOverlayByKey.set(key, overlay)
+    if (activeTypes.value.has(item.type)) marker.addTo(m)
+    objectMarkers.push(marker)
   }
-
-  // Remove stale overlays (objects removed from the dataset)
-  for (const [key, el] of objectOverlayByKey.entries()) {
-    if (nextKeys.has(key)) continue
-    viewer.value.removeOverlay(el)
-    objectOverlayByKey.delete(key)
-  }
-
-  updateObjectVisibility()
 }
 
 function redrawPlayers() {
-  if (!viewer.value || !osdLib.value || !isReady.value) return
-  const imageSize = getImageSize()
-  if (!imageSize) return
-  clearPlayerOverlays()
-  drawPlayers(imageSize)
+  const L = leaflet.value
+  const m = map.value
+  if (!L || !m) return
+
+  // Clear existing player markers
+  playerMarkers.forEach((marker) => m.removeLayer(marker))
+  playerMarkers = []
+
+  for (const player of props.players || []) {
+    const ping = player.ping?.toFixed(2)
+    const icon = svgCircleIcon('#ce7fe0', 14)
+
+    const latlng = worldToLeaflet(player.location_x, player.location_y)
+    const marker = L.marker(latlng, { icon }).addTo(m)
+
+    const mapCoords = worldToMap(player.location_x, player.location_y)
+    marker.bindPopup(`
+      <div>
+        <h3 class="text-lg font-bold">${player.name}</h3>
+        <p class="text-xs">User ID: ${player.userId}</p>
+        <p class="text-xs">Level: ${player.level ?? '?'}</p>
+        ${ping ? `<p class="text-xs">Ping: ${ping}ms</p>` : ''}
+        <p class="text-xs mt-2">World Coords: ${player.location_x.toFixed(2)}, ${player.location_y.toFixed(2)}</p>
+        <p class="text-xs">Map Coords: ${mapCoords.x}, ${mapCoords.y * -1}</p>
+      </div>
+    `)
+
+    playerMarkers.push(marker)
+  }
 }
 
 function toggleType(type: string, checked: boolean) {
@@ -241,62 +261,58 @@ function handleTypeChange(type: string, event: Event) {
   toggleType(type, !!target?.checked)
 }
 
-
 onMounted(async () => {
-  const { default: OpenSeadragon } = await import('openseadragon')
-  const Annotorious = (await import('@recogito/annotorious-openseadragon')).default
-  osdLib.value = OpenSeadragon
+  const mod = await import('leaflet')
+  const L = (mod as any).default ?? (mod as any)
+  leaflet.value = L
   const container = containerEl.value
   if (!container) return
 
-  viewer.value = OpenSeadragon({
-    showNavigationControl: false,
-    showZoomControl: false,
-    element: container,
-    tileSources: [
-      {
-        type: 'image',
-        url: '/map.jpg'
-      }
-    ],
-    minZoomLevel: 1,
-    maxZoomLevel: 10,
-    visibilityRatio: 1.0,
-    defaultZoomLevel: 3,
-    constrainDuringPan: true,
-    zoomPerClick: 1
+  // Custom CRS with corrected transformation
+  const CustomCRS = L.extend({}, L.CRS.Simple, {
+    transformation: new L.Transformation(TRANSFORM_A, TRANSFORM_B, TRANSFORM_C, TRANSFORM_D)
   })
 
-  Annotorious(viewer.value, {
-    disableEditor: true,
-    allowEmpty: true
+  const bounds: LatLngBoundsExpression = [
+    [0, 0],
+    [MAP_SIZE, MAP_SIZE]
+  ]
+
+  // Initial view centered on game origin
+  const worldCoords = mapToWorld(ORIGIN_GAME_X, ORIGIN_GAME_Y)
+  const origin = worldToLeaflet(worldCoords.x, worldCoords.y)
+
+  map.value = L.map(container, {
+    crs: CustomCRS,
+    zoomControl: false,
+    minZoom: -4,
+    maxZoom: 3,
+    maxBounds: bounds,
+    maxBoundsViscosity: 1
+  })
+  
+  
+  L.control.zoom({
+      position: 'topright'
+  }).addTo(map.value);
+
+  const m = map.value
+  if (!m) return
+
+  L.imageOverlay('/worldmap.webp', bounds).addTo(m)
+  m.fitBounds(bounds)
+  m.setView([origin.lat, origin.lng], -3)
+
+  let playersLayer = L.layerGroup().addTo(m)
+
+  m.on('mousemove', (e: LeafletMouseEvent) => {
+    const world = leafletToWorld(e.latlng)
+    const game = worldToMap(world.worldX, world.worldY)
+    coordsDisplay.value = `${Math.round(game.x)},${Math.round(game.y * -1)}`
   })
 
-  viewer.value.addOnceHandler('open', () => {
-    isReady.value = true
-    syncMapObjectOverlays()
-    redrawPlayers()
-  })
-
-  mouseTracker = new OpenSeadragon.MouseTracker({
-    element: viewer.value.container,
-    moveHandler: (event: any) => {
-      const viewerX = event.position.x
-      const viewerY = event.position.y
-      const windowPoint = new OpenSeadragon.Point(viewerX, viewerY)
-      const viewportPoint =
-        viewer.value.viewport.windowToImageCoordinates(windowPoint)
-      const imageSize = viewer.value.source.dimensions
-
-      const mappedX = (viewportPoint.x / imageSize.x) * 2000 - 1000
-      const mappedY =
-        ((imageSize.y - viewportPoint.y) / imageSize.y) * 2000 - 1000
-
-      coordsDisplay.value = `${Math.round(mappedX)},${Math.round(mappedY)}`
-    }
-  })
-
-  mouseTracker.setTracking(true)
+  redrawMapObjects()
+  redrawPlayers()
 })
 
 watch(
@@ -317,7 +333,7 @@ watch(
       const next = new Set(Array.from(activeTypes.value).filter((type) => types.has(type)))
       activeTypes.value = next
     }
-    syncMapObjectOverlays()
+    redrawMapObjects()
   },
   { deep: true, immediate: true }
 )
@@ -331,11 +347,12 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  mouseTracker?.destroy?.()
-  if (viewer.value) {
-    viewer.value.destroy()
-    viewer.value = null
+  if (map.value) {
+    map.value.remove()
+    map.value = null
   }
+  playerMarkers = []
+  objectMarkers = []
 })
 </script>
 
@@ -358,6 +375,6 @@ onBeforeUnmount(() => {
       <a href="https://github.com/brantje/palserver-map" target="_blank">palserver map</a>
     </div>
     <div id="cursorViewportPosition">{{ coordsDisplay }}</div>
-    <div ref="containerEl" id="openseadragon"></div>
+    <div ref="containerEl" id="leaflet-map"></div>
   </div>
 </template>

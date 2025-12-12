@@ -1,4 +1,3 @@
-declare module 'openseadragon'
-declare module '@recogito/annotorious-openseadragon'
+// (kept for any non-typed vendor libs; currently unused)
 
 
