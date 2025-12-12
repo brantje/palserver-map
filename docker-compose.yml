@@ -1,0 +1,25 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: palserver-map:local
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+    # If your Palworld REST API is running on the Docker host, keep this and set
+    # NUXT_PALWORLD_HOST=host.docker.internal (works with Docker Engine host-gateway).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    environment:
+      # Set this in production
+      NITRO_AUTH_SECRET: "change-me"
+
+      # Palworld REST API connection
+      NUXT_PALWORLD_HOST: "host.docker.internal"
+      NUXT_PALWORLD_PORT: "3333"
+      NUXT_PALWORLD_PASSWORD: ""
+
+
