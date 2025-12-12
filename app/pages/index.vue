@@ -56,8 +56,10 @@ const {
   refresh: refreshMapObjects
 } = useAsyncData<MapObject[]>('mapObjects', async () => {
   try {
-    const response = await $fetch<MapObject[]>('/api/map/objects')
-    return response
+    const response = await $fetch<unknown>('/data/map_objects.json')
+    const all = Array.isArray(response) ? (response as MapObject[]) : []
+    // Keep behavior consistent with the previous `/api/map/objects` route.
+    return all.filter((item) => item.type !== 'pal')
   } catch (err: any) {
     // Non-fatal: players/map can still render without objects.
     errorMessage.value = err?.data?.message || 'Unable to load map objects.'

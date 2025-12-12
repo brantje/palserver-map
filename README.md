@@ -2,12 +2,11 @@
 
 A **Nuxt 4** web app that serves an interactive map and exposes a small API layer to:
 
-- Load map objects from `server/data/map_objects.json` (used by the frontend map UI).
+- Load map objects from `public/data/map_objects.json` (served at `/data/map_objects.json`, used by the frontend map UI).
 - Proxy selected **Palworld** server REST endpoints (players/info) so the UI can fetch them from the same origin.
 
 ## API
 
-- **`GET /api/map/objects`**: returns map objects from `server/data/map_objects.json` (filters out items with `type === "pal"`).
 - **`GET /api/palworld/players`**: fetches Palworld players from `http://<host>:<port>/v1/api/players` (basic auth `admin:<password>`).
 - **`GET /api/palworld/info`**: fetches Palworld server info from `http://<host>:<port>/v1/api/info` (basic auth `admin:<password>`).
 
