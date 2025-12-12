@@ -1,12 +1,13 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
+@import "leaflet/dist/leaflet.css";
 
 body {
   background-color: #000;
   color: #fff;
 }
 
-#openseadragon {
+#leaflet-map {
   width: 100vw;
   height: 100vh;
 }
@@ -82,6 +83,7 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 100px;
+  position: relative;
 }
 
 .player-label {
@@ -113,6 +115,13 @@ body {
   height: 32px;
   background: transparent;
   pointer-events: auto;
+}
+
+/* Leaflet divIcon defaults add a white background + border */
+.leaflet-div-icon.map-object-leaflet-icon,
+.leaflet-div-icon.player-leaflet-icon {
+  background: transparent;
+  border: none;
 }
 
 .map-object-hidden {
