@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, watch, ref, computed, shallowRef } from 'vu
 import type { DivIcon, Icon, LatLng, LatLngBoundsExpression, LeafletMouseEvent, Map as LeafletMap, Marker } from 'leaflet'
 
 type Player = {
-  userId: string
+  playerId: string
   name: string
   level?: number
   location_x: number
@@ -275,7 +275,7 @@ function redrawPlayers() {
 
   const nextUserIds = new Set<string>()
   for (const player of props.players || []) {
-    nextUserIds.add(player.userId)
+    nextUserIds.add(player.playerId)
 
     const ping = player.ping?.toFixed(2)
     const icon = getPlayerIcon(player)
@@ -291,7 +291,7 @@ function redrawPlayers() {
       </div>
     `
 
-    const existing = playerMarkerByUserId.get(player.userId)
+    const existing = playerMarkerByUserId.get(player.playerId)
     if (existing) {
       existing.setLatLng(latlng)
       ;(existing as any).setIcon?.(icon)
@@ -302,7 +302,7 @@ function redrawPlayers() {
 
     const marker = L.marker(latlng, { icon }).addTo(layer)
     marker.bindPopup(popupHtml)
-    playerMarkerByUserId.set(player.userId, marker)
+    playerMarkerByUserId.set(player.playerId, marker)
   }
 
   // Remove markers for players that no longer exist
@@ -320,7 +320,7 @@ function focusPlayer(player: Player) {
   const m = map.value
   if (!m) return
 
-  const marker = playerMarkerByUserId.get(player.userId)
+  const marker = playerMarkerByUserId.get(player.playerId)
   const latlng = marker ? marker.getLatLng() : worldToLeaflet(player.location_x, player.location_y)
   const nextZoom = Math.max(m.getZoom(), -1)
 
@@ -467,7 +467,7 @@ onBeforeUnmount(() => {
       <div v-if="sortedPlayers.length" class="player-list">
         <div class="player-list-title">Players</div>
         <ul class="player-list-items">
-          <li v-for="player in sortedPlayers" :key="player.userId" class="player-list-item">
+          <li v-for="player in sortedPlayers" :key="player.playerId" class="player-list-item">
             <button
               type="button"
               class="player-focus-btn"
@@ -481,7 +481,7 @@ onBeforeUnmount(() => {
                 />
               </svg>
             </button>
-            <span class="player-name" :title="player.userId">{{ player.name }}</span>
+            <span class="player-name" :title="player.playerId">{{ player.name }}</span>
             <span v-if="player.level != null" class="player-level">Lv {{ player.level }}</span>
           </li>
         </ul>
