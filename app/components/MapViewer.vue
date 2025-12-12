@@ -43,7 +43,7 @@ const activeTypes = ref<Set<string>>(new Set())
 
 let playerMarkers: Marker[] = []
 let objectMarkers: Marker[] = []
-const playerMarkerByUserId = new Map<string, Marker>()
+const playerMarkerByPlayerId = new Map<string, Marker>()
 
 const availableTypes = computed(() =>
   Array.from(new Set((props.mapObjects || []).map((item) => item.type))).sort()
@@ -273,9 +273,9 @@ function redrawPlayers() {
   // Do NOT clear the existing player layer; update markers in-place so focusing doesn't reset them.
   const layer = playersLayer.value ?? m
 
-  const nextUserIds = new Set<string>()
+  const nextPlayerIds = new Set<string>()
   for (const player of props.players || []) {
-    nextUserIds.add(player.playerId)
+    nextPlayerIds.add(player.playerId)
 
     const ping = player.ping?.toFixed(2)
     const icon = getPlayerIcon(player)
@@ -291,7 +291,7 @@ function redrawPlayers() {
       </div>
     `
 
-    const existing = playerMarkerByUserId.get(player.playerId)
+    const existing = playerMarkerByPlayerId.get(player.playerId)
     if (existing) {
       existing.setLatLng(latlng)
       ;(existing as any).setIcon?.(icon)
@@ -302,25 +302,25 @@ function redrawPlayers() {
 
     const marker = L.marker(latlng, { icon }).addTo(layer)
     marker.bindPopup(popupHtml)
-    playerMarkerByUserId.set(player.playerId, marker)
+    playerMarkerByPlayerId.set(player.playerId, marker)
   }
 
   // Remove markers for players that no longer exist
-  for (const [userId, marker] of playerMarkerByUserId.entries()) {
-    if (nextUserIds.has(userId)) continue
+  for (const [playerId, marker] of playerMarkerByPlayerId.entries()) {
+    if (nextPlayerIds.has(playerId)) continue
     if (m.hasLayer(marker)) m.removeLayer(marker)
-    playerMarkerByUserId.delete(userId)
+    playerMarkerByPlayerId.delete(playerId)
   }
 
   // Keep this array in sync for any other codepaths that rely on it.
-  playerMarkers = Array.from(playerMarkerByUserId.values())
+  playerMarkers = Array.from(playerMarkerByPlayerId.values())
 }
 
 function focusPlayer(player: Player) {
   const m = map.value
   if (!m) return
 
-  const marker = playerMarkerByUserId.get(player.playerId)
+  const marker = playerMarkerByPlayerId.get(player.playerId)
   const latlng = marker ? marker.getLatLng() : worldToLeaflet(player.location_x, player.location_y)
   const nextZoom = Math.max(m.getZoom(), -1)
 
@@ -443,7 +443,7 @@ onBeforeUnmount(() => {
   playersLayer.value = null
   playerMarkers = []
   objectMarkers = []
-  playerMarkerByUserId.clear()
+  playerMarkerByPlayerId.clear()
 })
 </script>
 
