@@ -256,7 +256,7 @@ onMounted(async () => {
     tileSources: [
       {
         type: 'image',
-        url: '/map.jpg'
+        url: '/worldmap.webp'
       }
     ],
     minZoomLevel: 1,
