@@ -321,8 +321,6 @@ function focusPlayer(player: Player) {
   } else {
     m.setView(latlng, nextZoom, { animate: true })
   }
-
-  marker?.openPopup()
 }
 
 function toggleType(type: string, checked: boolean) {
